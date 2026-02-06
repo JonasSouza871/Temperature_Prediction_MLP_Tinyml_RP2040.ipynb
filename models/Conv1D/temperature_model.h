@@ -1,9 +1,29 @@
-// Temperature Prediction Model - TinyML
-// Auto-generated file - Do not edit manually
-// Model trained on AHT20 + BMP280 sensor data
+//Temperature Prediction Model - TinyML 
+//Auto-generated file - Do not edit manually
+//Model trained on AHT20 + BMP280 sensor data
 
 #ifndef TEMPERATURE_MODEL_H
 #define TEMPERATURE_MODEL_H
+
+// Model information
+#define WINDOW_SIZE 10
+#define NUM_FEATURES 4
+#define NUM_HORIZONS 3
+
+// Feature names
+const char* feature_names[] = {
+    "Temp_AHT20_C",
+    "Umid_AHT20_pct",
+    "Temp_BMP280_C",
+    "Press_BMP280_hPa"
+};
+
+// Horizon names
+const char* horizon_names[] = {
+    "5 minutes",
+    "10 minutes",
+    "15 minutes"
+};
 
 const unsigned char temperature_model[] = {
   0x1c, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33, 0x14, 0x00, 0x20, 0x00, 
@@ -741,25 +761,5 @@ const unsigned char temperature_model[] = {
   0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 
 };
 const unsigned int temperature_model_len = 8792;
-
-// Model information
-#define WINDOW_SIZE 10
-#define NUM_FEATURES 4
-#define NUM_HORIZONS 3
-
-// Feature names
-const char* feature_names[] = {
-    "Temp_AHT20_C",
-    "Umid_AHT20_pct",
-    "Temp_BMP280_C",
-    "Press_BMP280_hPa"
-};
-
-// Horizon names
-const char* horizon_names[] = {
-    "5 minutes",
-    "10 minutes",
-    "15 minutes"
-};
 
 #endif // TEMPERATURE_MODEL_H
