@@ -1,0 +1,8 @@
+# Build directory
+build/
+**/build/
+pico_sdk_import.cmake
+
+# IDE
+.vscode/ 
+
