@@ -46,6 +46,14 @@ add_library(ssd1306 STATIC firmware/lib/ssd1306.c)
 target_include_directories(ssd1306 PUBLIC ${CMAKE_CURRENT_LIST_DIR}/firmware/lib)
 target_link_libraries(ssd1306 PUBLIC hardware_i2c hardware_gpio)
 
+# Biblioteca dos sensores (AHT20 e BMP280)
+add_library(sensors STATIC
+    firmware/lib/aht20.c
+    firmware/lib/bmp280.c
+)
+target_include_directories(sensors PUBLIC ${CMAKE_CURRENT_LIST_DIR}/firmware/lib)
+target_link_libraries(sensors PUBLIC hardware_i2c pico_stdlib)
+
 # Executável principal
 add_executable(temperature_prediction
     firmware/main.c
@@ -67,6 +75,7 @@ target_link_libraries(temperature_prediction PRIVATE
     hardware_i2c
     hardware_gpio
     ssd1306
+    sensors
     ${TFLM_TARGET}
 )
 

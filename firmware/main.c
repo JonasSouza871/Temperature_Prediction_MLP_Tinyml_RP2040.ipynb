@@ -7,6 +7,8 @@
 #include "scaler_params.h"  // Parâmetros de normalização (mean e scale)
 #include "ssd1306.h"
 #include "font.h"
+#include "aht20.h"
+#include "bmp280.h"
 
 // Configurações do modelo
 #define WINDOW_SIZE 10      // Janela temporal: 10 amostras
@@ -22,27 +24,43 @@ static float sensor_window[WINDOW_SIZE][NUM_FEATURES];
 static int window_pos = 0;
 static bool window_full = false;
 
+// Parâmetros de calibração do BMP280 (globais)
+static struct bmp280_calib_param bmp_params;
+
 // ============================================================================
 // FUNÇÕES DOS SENSORES (VOCÊ DEVE IMPLEMENTAR)
 // ============================================================================
 
-// TODO: Implementar leitura do sensor AHT20
+// Lê temperatura e umidade do sensor AHT20
 // Retorna: 0 se OK, -1 se erro
 int read_aht20(float* temp_c, float* humidity_pct) {
-    // PLACEHOLDER: você deve implementar a comunicação I2C com o AHT20
-    // Exemplo de valores fake para compilar:
-    *temp_c = 20.0f;
-    *humidity_pct = 65.0f;
+    AHT20_Data dados_aht;
+
+    if (!aht20_read(i2c1, &dados_aht)) {
+        return -1;  // Erro na leitura
+    }
+
+    *temp_c = dados_aht.temperature;
+    *humidity_pct = dados_aht.humidity;
     return 0;
 }
 
-// TODO: Implementar leitura do sensor BMP280
+// Lê temperatura e pressão do sensor BMP280
 // Retorna: 0 se OK, -1 se erro
 int read_bmp280(float* temp_c, float* pressure_hpa) {
-    // PLACEHOLDER: você deve implementar a comunicação I2C com o BMP280
-    // Exemplo de valores fake para compilar:
-    *temp_c = 21.0f;
-    *pressure_hpa = 918.0f;
+    int32_t temp_raw, press_raw;
+
+    // Lê dados brutos do BMP280
+    bmp280_read_raw(i2c1, &temp_raw, &press_raw);
+
+    // Converte usando parâmetros de calibração
+    int32_t temp_conv = bmp280_convert_temp(temp_raw, &bmp_params);
+    int32_t press_conv = bmp280_convert_pressure(press_raw, temp_raw, &bmp_params);
+
+    // Converte para float
+    *temp_c = temp_conv / 100.0f;  // Divide por 100 para obter °C
+    *pressure_hpa = press_conv / 100.0f;  // Converte Pa para hPa
+
     return 0;
 }
 
@@ -173,7 +191,7 @@ int main() {
     printf("╚════════════════════════════════════════╝\n\n");
 
     // ========================================================================
-    // TODO: Configurar I2C para os sensores
+    // Configurar I2C para os sensores
     // ========================================================================
     printf("Inicializando I2C...\n");
     i2c_init(i2c1, 400 * 1000);  // 400kHz
@@ -182,8 +200,22 @@ int main() {
     gpio_pull_up(14);
     gpio_pull_up(15);
 
-    // TODO: Inicializar sensores AHT20 e BMP280
-    // Você precisa adicionar as bibliotecas dos sensores
+    // ========================================================================
+    // Inicializar sensores AHT20 e BMP280
+    // ========================================================================
+    printf("Inicializando sensores...\n");
+
+    // Inicializa AHT20
+    if (!aht20_init(i2c1)) {
+        printf("ERRO: Falha ao inicializar AHT20!\n");
+    } else {
+        printf("AHT20 inicializado com sucesso!\n");
+    }
+
+    // Inicializa BMP280
+    bmp280_init(i2c1);
+    bmp280_get_calib_params(i2c1, &bmp_params);
+    printf("BMP280 inicializado com sucesso!\n");
 
     // ========================================================================
     // Inicializar Display OLED
@@ -204,9 +236,23 @@ int main() {
     int rc = tflm_init();
     if (rc != 0) {
         printf("ERRO tflm_init: %d\n", rc);
+
+        // Mensagens de erro detalhadas
+        switch(rc) {
+            case 1: printf("Erro: Modelo nao encontrado!\n"); break;
+            case 2: printf("Erro: Versao do schema incompativel!\n"); break;
+            case 3: printf("Erro: AllocateTensors falhou (memoria?)!\n"); break;
+            case 4: printf("Erro: Tensores input/output nulos!\n"); break;
+            case 5: printf("Erro: Tipo do tensor de entrada incorreto!\n"); break;
+            case 6: printf("Erro: Tipo do tensor de saida incorreto!\n"); break;
+            default: printf("Erro desconhecido!\n"); break;
+        }
+
         ssd1306_fill(&display, false);
         ssd1306_draw_string(&display, "ERROR!", 0, 0, false);
-        ssd1306_draw_string(&display, "TFLM Init Failed", 0, 20, false);
+        char msg[32];
+        snprintf(msg, sizeof(msg), "TFLM Init: %d", rc);
+        ssd1306_draw_string(&display, msg, 0, 20, false);
         ssd1306_send_data(&display);
         while (1) tight_loop_contents();
     }

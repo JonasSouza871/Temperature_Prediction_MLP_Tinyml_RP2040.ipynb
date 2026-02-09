@@ -3,9 +3,10 @@
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+#include <stdio.h>
 
-// Arena de 20KB pra tensores intermediários da CNN 1D (modelo bem menor que MNIST)
-static constexpr int kTensorArenaSize = 20 * 1024;
+// Arena de 60KB pra tensores intermediários da CNN 1D
+static constexpr int kTensorArenaSize = 60 * 1024;
 alignas(16) static uint8_t tensor_arena[kTensorArenaSize];  // alinhado em 16 bytes pra performance
 
 static const tflite::Model* model_ptr = nullptr;
@@ -15,34 +16,76 @@ static TfLiteTensor* output_ptr = nullptr;  // tensor de saída [1, 3] float32
 
 // Inicializa TFLM e carrega modelo da flash
 extern "C" int tflm_init(void) {
+    printf("[TFLM] Carregando modelo...\n");
     model_ptr = tflite::GetModel(temperature_model);  // carrega modelo de temperatura embarcado
-    if (!model_ptr) return 1;
-    if (model_ptr->version() != TFLITE_SCHEMA_VERSION) return 2;  // verifica compatibilidade
+    if (!model_ptr) {
+        printf("[TFLM] ERRO: Modelo nao encontrado!\n");
+        return 1;
+    }
+    printf("[TFLM] Modelo carregado OK\n");
 
-    // Registra apenas as operações usadas pelo modelo CNN 1D (economiza memória)
-    static tflite::MicroMutableOpResolver<6> resolver;
+    printf("[TFLM] Verificando versao do schema...\n");
+    if (model_ptr->version() != TFLITE_SCHEMA_VERSION) {
+        printf("[TFLM] ERRO: Schema v%d, esperado v%d\n",
+               model_ptr->version(), TFLITE_SCHEMA_VERSION);
+        return 2;
+    }
+    printf("[TFLM] Schema OK (v%d)\n", TFLITE_SCHEMA_VERSION);
+
+    // Registra todas as operações usadas pelo modelo
+    static tflite::MicroMutableOpResolver<11> resolver;
     resolver.AddConv2D();           // Conv1D é implementado como Conv2D com width=1
-    resolver.AddMean();             // GlobalAveragePooling1D é implementado como MEAN
+    resolver.AddMean();             // GlobalAveragePooling1D
     resolver.AddFullyConnected();   // camadas densas
     resolver.AddReshape();          // reshape entre camadas
     resolver.AddQuantize();         // operações de quantização
-    resolver.AddDequantize();       // dequantização (modelo usa float32)
+    resolver.AddDequantize();       // dequantização
+    resolver.AddRelu();             // ativação ReLU
+    resolver.AddPad();              // padding
+    resolver.AddMaxPool2D();        // max pooling (caso necessário)
+    resolver.AddSoftmax();          // softmax (caso necessário)
+    resolver.AddExpandDims();       // EXPAND_DIMS (necessário para o modelo!)
 
     // Cria interpretador estático (evita alocação dinâmica)
+    printf("[TFLM] Criando interpretador (arena=%d KB)...\n", kTensorArenaSize / 1024);
     static tflite::MicroInterpreter static_interpreter(
         model_ptr, resolver, tensor_arena, kTensorArenaSize
     );
     interpreter_ptr = &static_interpreter;
+    printf("[TFLM] Interpretador criado OK\n");
 
-    if (interpreter_ptr->AllocateTensors() != kTfLiteOk) return 3;  // aloca memória pros tensores
+    printf("[TFLM] Alocando tensores...\n");
+    if (interpreter_ptr->AllocateTensors() != kTfLiteOk) {
+        printf("[TFLM] ERRO: AllocateTensors falhou!\n");
+        return 3;
+    }
+    printf("[TFLM] Tensores alocados OK\n");
 
+    printf("[TFLM] Obtendo ponteiros dos tensores...\n");
     input_ptr  = interpreter_ptr->input(0);   // pega referência do tensor de entrada
     output_ptr = interpreter_ptr->output(0);  // pega referência do tensor de saída
-    if (!input_ptr || !output_ptr) return 4;
+    if (!input_ptr || !output_ptr) {
+        printf("[TFLM] ERRO: Tensores nulos!\n");
+        return 4;
+    }
+    printf("[TFLM] Input: %p, Output: %p\n", input_ptr, output_ptr);
 
     // Valida que o modelo usa float32
-    if (input_ptr->type != kTfLiteFloat32)  return 5;
-    if (output_ptr->type != kTfLiteFloat32) return 6;
+    printf("[TFLM] Validando tipos dos tensores...\n");
+    printf("[TFLM] Input type: %d (esperado: %d=float32)\n", input_ptr->type, kTfLiteFloat32);
+    printf("[TFLM] Output type: %d (esperado: %d=float32)\n", output_ptr->type, kTfLiteFloat32);
+
+    if (input_ptr->type != kTfLiteFloat32) {
+        printf("[TFLM] ERRO: Tipo do input incorreto!\n");
+        return 5;
+    }
+    if (output_ptr->type != kTfLiteFloat32) {
+        printf("[TFLM] ERRO: Tipo do output incorreto!\n");
+        return 6;
+    }
+
+    printf("[TFLM] Inicializacao completa! Arena usado: %d bytes\n",
+           (int)interpreter_ptr->arena_used_bytes());
 
     return 0;  // sucesso
 }
