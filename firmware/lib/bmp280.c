@@ -2,13 +2,13 @@
 #include "hardware/i2c.h"
 
 /* ---------- Configurações do Sensor BMP280 ---------- */
-#define ADDR _u(0x77)
+#define ADDR _u(0x76)
 
 /* ---------- Funções Públicas ---------- */
 
 void bmp280_init(i2c_inst_t *i2c) {
     uint8_t buf[2];
-    
+
     // Configura registro de configuração
     const uint8_t reg_config_val = ((0x04 << 5) | (0x05 << 2)) & 0xFC;
     buf[0] = REG_CONFIG;
@@ -25,7 +25,7 @@ void bmp280_init(i2c_inst_t *i2c) {
 void bmp280_read_raw(i2c_inst_t *i2c, int32_t* temp, int32_t* pressure) {
     uint8_t buf[6];
     uint8_t reg = REG_PRESSURE_MSB;
-    
+
     i2c_write_blocking(i2c, ADDR, &reg, 1, true);
     i2c_read_blocking(i2c, ADDR, buf, 6, false);
 
@@ -41,7 +41,7 @@ void bmp280_reset(i2c_inst_t *i2c) {
 void bmp280_get_calib_params(i2c_inst_t *i2c, struct bmp280_calib_param* params) {
     uint8_t buf[NUM_CALIB_PARAMS] = { 0 };
     uint8_t reg = REG_DIG_T1_LSB;
-    
+
     i2c_write_blocking(i2c, ADDR, &reg, 1, true);
     i2c_read_blocking(i2c, ADDR, buf, NUM_CALIB_PARAMS, false);
 

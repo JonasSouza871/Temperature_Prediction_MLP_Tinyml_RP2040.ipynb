@@ -119,13 +119,13 @@ void run_temperature_prediction(void) {
     snprintf(line, sizeof(line), "Temp Prediction");
     ssd1306_draw_string(&display, line, 0, 0, false);
 
-    snprintf(line, sizeof(line), "+5m:  %.1fC", output[0]);
+    snprintf(line, sizeof(line), "+5m:  %.2fC", output[0]);
     ssd1306_draw_string(&display, line, 0, 16, false);
 
-    snprintf(line, sizeof(line), "+10m: %.1fC", output[1]);
+    snprintf(line, sizeof(line), "+10m: %.2fC", output[1]);
     ssd1306_draw_string(&display, line, 0, 28, false);
 
-    snprintf(line, sizeof(line), "+15m: %.1fC", output[2]);
+    snprintf(line, sizeof(line), "+15m: %.2fC", output[2]);
     ssd1306_draw_string(&display, line, 0, 40, false);
 
     ssd1306_send_data(&display);

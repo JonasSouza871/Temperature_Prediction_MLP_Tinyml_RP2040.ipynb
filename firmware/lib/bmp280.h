@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /* ---------- Configurações do Sensor BMP280 ---------- */
-#define ADDR _u(0x77)
+#define ADDR _u(0x76)
 #define NUM_CALIB_PARAMS 24
 
 /* ---------- Registros de Controle ---------- */
