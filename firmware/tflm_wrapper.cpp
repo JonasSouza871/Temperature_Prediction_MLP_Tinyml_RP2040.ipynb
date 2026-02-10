@@ -1,23 +1,21 @@
 #include "tflm_wrapper.h"
-#include "temperature_model.h"  // Modelo CNN 1D para predição de temperatura
+#include "temperature_model.h" //modelo CNN 1D embarcado na flash
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include <stdio.h>
 
-// Arena de 60KB pra tensores intermediários da CNN 1D
 static constexpr int kTensorArenaSize = 60 * 1024;
-alignas(16) static uint8_t tensor_arena[kTensorArenaSize];  // alinhado em 16 bytes pra performance
+alignas(16) static uint8_t tensor_arena[kTensorArenaSize]; //alinhado em 16 bytes para performance
 
-static const tflite::Model* model_ptr = nullptr;
+static const tflite::Model*    model_ptr       = nullptr;
 static tflite::MicroInterpreter* interpreter_ptr = nullptr;
-static TfLiteTensor* input_ptr = nullptr;   // tensor de entrada [1, 10, 4] float32
-static TfLiteTensor* output_ptr = nullptr;  // tensor de saída [1, 3] float32
+static TfLiteTensor* input_ptr  = nullptr; //tensor de entrada [1, 10, 4] float32
+static TfLiteTensor* output_ptr = nullptr; //tensor de saída [1, 3] float32
 
-// Inicializa TFLM e carrega modelo da flash
 extern "C" int tflm_init(void) {
     printf("[TFLM] Carregando modelo...\n");
-    model_ptr = tflite::GetModel(temperature_model);  // carrega modelo de temperatura embarcado
+    model_ptr = tflite::GetModel(temperature_model);
     if (!model_ptr) {
         printf("[TFLM] ERRO: Modelo nao encontrado!\n");
         return 1;
@@ -26,31 +24,26 @@ extern "C" int tflm_init(void) {
 
     printf("[TFLM] Verificando versao do schema...\n");
     if (model_ptr->version() != TFLITE_SCHEMA_VERSION) {
-        printf("[TFLM] ERRO: Schema v%d, esperado v%d\n",
-               model_ptr->version(), TFLITE_SCHEMA_VERSION);
+        printf("[TFLM] ERRO: Schema v%d, esperado v%d\n", model_ptr->version(), TFLITE_SCHEMA_VERSION);
         return 2;
     }
     printf("[TFLM] Schema OK (v%d)\n", TFLITE_SCHEMA_VERSION);
 
-    // Registra todas as operações usadas pelo modelo
     static tflite::MicroMutableOpResolver<11> resolver;
-    resolver.AddConv2D();           // Conv1D é implementado como Conv2D com width=1
-    resolver.AddMean();             // GlobalAveragePooling1D
-    resolver.AddFullyConnected();   // camadas densas
-    resolver.AddReshape();          // reshape entre camadas
-    resolver.AddQuantize();         // operações de quantização
-    resolver.AddDequantize();       // dequantização
-    resolver.AddRelu();             // ativação ReLU
-    resolver.AddPad();              // padding
-    resolver.AddMaxPool2D();        // max pooling (caso necessário)
-    resolver.AddSoftmax();          // softmax (caso necessário)
-    resolver.AddExpandDims();       // EXPAND_DIMS (necessário para o modelo!)
+    resolver.AddConv2D();        //Conv1D implementado como Conv2D com width=1
+    resolver.AddMean();          //GlobalAveragePooling1D
+    resolver.AddFullyConnected();//camadas densas
+    resolver.AddReshape();       //reshape entre camadas
+    resolver.AddQuantize();      //quantização
+    resolver.AddDequantize();    //dequantização
+    resolver.AddRelu();          //ativação ReLU
+    resolver.AddPad();           //padding
+    resolver.AddMaxPool2D();     //max pooling
+    resolver.AddSoftmax();       //softmax
+    resolver.AddExpandDims();    //ExpandDims
 
-    // Cria interpretador estático (evita alocação dinâmica)
     printf("[TFLM] Criando interpretador (arena=%d KB)...\n", kTensorArenaSize / 1024);
-    static tflite::MicroInterpreter static_interpreter(
-        model_ptr, resolver, tensor_arena, kTensorArenaSize
-    );
+    static tflite::MicroInterpreter static_interpreter(model_ptr, resolver, tensor_arena, kTensorArenaSize);
     interpreter_ptr = &static_interpreter;
     printf("[TFLM] Interpretador criado OK\n");
 
@@ -62,19 +55,17 @@ extern "C" int tflm_init(void) {
     printf("[TFLM] Tensores alocados OK\n");
 
     printf("[TFLM] Obtendo ponteiros dos tensores...\n");
-    input_ptr  = interpreter_ptr->input(0);   // pega referência do tensor de entrada
-    output_ptr = interpreter_ptr->output(0);  // pega referência do tensor de saída
+    input_ptr  = interpreter_ptr->input(0);
+    output_ptr = interpreter_ptr->output(0);
     if (!input_ptr || !output_ptr) {
         printf("[TFLM] ERRO: Tensores nulos!\n");
         return 4;
     }
     printf("[TFLM] Input: %p, Output: %p\n", input_ptr, output_ptr);
 
-    // Valida que o modelo usa float32
     printf("[TFLM] Validando tipos dos tensores...\n");
     printf("[TFLM] Input type: %d (esperado: %d=float32)\n", input_ptr->type, kTfLiteFloat32);
     printf("[TFLM] Output type: %d (esperado: %d=float32)\n", output_ptr->type, kTfLiteFloat32);
-
     if (input_ptr->type != kTfLiteFloat32) {
         printf("[TFLM] ERRO: Tipo do input incorreto!\n");
         return 5;
@@ -84,33 +75,27 @@ extern "C" int tflm_init(void) {
         return 6;
     }
 
-    printf("[TFLM] Inicializacao completa! Arena usado: %d bytes\n",
-           (int)interpreter_ptr->arena_used_bytes());
-
-    return 0;  // sucesso
+    printf("[TFLM] Inicializacao completa! Arena usado: %d bytes\n", (int)interpreter_ptr->arena_used_bytes());
+    return 0;
 }
 
-// Retorna ponteiro pro buffer de entrada float32[10][4] = 40 floats
 extern "C" float* tflm_input_ptr(int* nfloats) {
     if (!input_ptr) return nullptr;
-    if (nfloats) *nfloats = input_ptr->bytes / sizeof(float);  // 40 floats (10 timesteps * 4 features)
+    if (nfloats) *nfloats = input_ptr->bytes / sizeof(float); //40 floats: 10 timesteps * 4 features
     return input_ptr->data.f;
 }
 
-// Retorna ponteiro pro buffer de saída float32[3]
 extern "C" float* tflm_output_ptr(int* nfloats) {
     if (!output_ptr) return nullptr;
-    if (nfloats) *nfloats = output_ptr->bytes / sizeof(float);  // 3 floats (previsões para 5, 10, 15 min)
+    if (nfloats) *nfloats = output_ptr->bytes / sizeof(float); //3 floats: previsões 5, 10, 15 min
     return output_ptr->data.f;
 }
 
-// Executa inferência: processa input_ptr e gera resultado em output_ptr
 extern "C" int tflm_invoke(void) {
     if (!interpreter_ptr) return 1;
     return (interpreter_ptr->Invoke() == kTfLiteOk) ? 0 : 2;
 }
 
-// Retorna quantos bytes da arena estão sendo usados (útil pra debug)
 extern "C" int tflm_arena_used_bytes(void) {
     if (!interpreter_ptr) return -1;
     return (int)interpreter_ptr->arena_used_bytes();
